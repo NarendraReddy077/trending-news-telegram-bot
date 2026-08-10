@@ -93,7 +93,10 @@ def get_news(
 ):
     """Retrieve news articles from DynamoDB with sorting, searching, and pagination."""
     import datetime
-
+    
+    # Restrict to last 14 days to keep performance fast
+    fourteen_days_ago = (datetime.datetime.utcnow() - datetime.timedelta(days=14)).isoformat() + "Z"
+    
     items = []
     try:
         if category:
