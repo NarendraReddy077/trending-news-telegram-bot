@@ -277,6 +277,71 @@ def deduplicate_and_save(articles):
     logger.info(f"Deduplicated {len(articles)} articles. Saved {saved_count} new articles to DynamoDB.")
     return new_articles
 
+def send_telegram_briefing(bot_token, chat_id, articles):
+    """Send the formatted daily news briefing to the configured Telegram channel/chat using HTML parse mode."""
+    if not bot_token or not chat_id:
+        logger.warning("Telegram Bot Token or Chat ID not configured. Skipping briefing.")
+        return
+        
+    if not articles:
+        logger.info("No articles to send in the briefing.")
+        return
+        
+    # Format the message in HTML format
+    message = "<b>🔥 Daily Trending News Digest 🔥</b>\n\n"
+    
+    for i, article in enumerate(articles, 1):
+        title = article.get("title", "")
+        url = article.get("url", "")
+        source = article.get("source", "")
+        category = article.get("category", "")
+        score = article.get("score", 100)
+        
+        # Escape HTML special characters
+        title_escaped = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        source_escaped = source.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        category_escaped = category.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        
+        # Format line: index. [Category] Title (Source) - Score
+        # With hyperlink on title if url is valid
+        if url:
+            item_str = f"{i}. [{category_escaped}] <a href=\"{url}\">{title_escaped}</a> (<i>{source_escaped}</i>) [Score: {score}]\n\n"
+        else:
+            item_str = f"{i}. [{category_escaped}] <b>{title_escaped}</b> (<i>{source_escaped}</i>) [Score: {score}]\n\n"
+            
+        # Telegram message limit is 4096 characters. Let's make sure we don't exceed it.
+        if len(message) + len(item_str) + 100 > 4096:
+            break
+        message += item_str
+        
+    if DASHBOARD_URL:
+        dashboard_escaped = DASHBOARD_URL.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        message += f"\n🌐 <a href=\"{dashboard_escaped}\">View full dashboard</a>"
+        
+    # Post request to Telegram API
+    telegram_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True
+    }
+    
+    try:
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            telegram_url,
+            data=data,
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            res_data = json.loads(response.read().decode())
+            if not res_data.get("ok"):
+                logger.error(f"Telegram API error: {res_data}")
+            else:
+                logger.info("Successfully sent news briefing to Telegram.")
+    except Exception as e:
+        logger.error(f"Failed to send Telegram briefing: {e}")
 
 def lambda_handler(event, context):
     """Main Lambda Entry Point."""
