@@ -165,14 +165,55 @@ class TelegramNewsBotStack(Stack):
             )
         )
 
+        # 8. CloudFront Distribution
+        s3_origin = origins.S3Origin(
+            frontend_bucket,
+            origin_access_identity=oai
+        )
 
-        # 8. Permissions and Security
+        api_domain = f"{api_gateway.rest_api_id}.execute-api.{self.region}.amazonaws.com"
+        api_origin = origins.HttpOrigin(
+            api_domain,
+            origin_path="/prod"
+        )
+
+        distribution = cloudfront.Distribution(
+            self, "NewsDistribution",
+            default_behavior=cloudfront.BehaviorOptions(
+                origin=s3_origin,
+                viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+            ),
+            additional_behaviors={
+                "/api/*": cloudfront.BehaviorOptions(
+                    origin=api_origin,
+                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                    allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
+                    cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                    origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER
+                )
+            },
+            default_root_object="index.html"
+        )
+
+        # Add live dashboard URL to fetcher Lambda's environment
+        fetcher_lambda.add_environment("DASHBOARD_URL", f"https://{distribution.distribution_domain_name}")
+
+        # 9. S3 Deployment to push static files to S3 bucket
+        s3_deploy.BucketDeployment(
+            self, "DeployFrontend",
+            sources=[s3_deploy.Source.asset("frontend")],
+            destination_bucket=frontend_bucket,
+            distribution=distribution,
+            distribution_paths=["/*"]
+        )
+
+        # 10. Permissions and Security
         table.grant_read_write_data(fetcher_lambda)
         table.grant_read_data(api_lambda)
         secrets.grant_read(fetcher_lambda)
         fetcher_lambda.grant_invoke(api_lambda)
 
-        # 9. EventBridge Rule - Schedule fetcher twice daily (8:00 AM & 8:00 PM UTC)
+        # 11. EventBridge Rule - Schedule fetcher twice daily (8:00 AM & 8:00 PM UTC)
         rule = events.Rule(
             self, "FetcherCronRule",
             schedule=events.Schedule.cron(minute="0", hour="8,20", month="*", day="*", year="*")
