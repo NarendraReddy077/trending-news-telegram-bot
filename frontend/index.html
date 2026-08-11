@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TriggNews - Trending News</title>
+    <!-- Google Fonts: Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <!-- FontAwesome for Premium Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body class="dark-theme">
+    <div class="glass-bg-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <header class="app-header">
+        <div class="header-container">
+            <div class="logo-area">
+                <div class="logo-icon">
+                    <i class="fa-solid fa-bolt-lightning"></i>
+                </div>
+                <div class="logo-text">
+                    <h1>Trigg<span>News</span></h1>
+                    <p>Daily Trending News</p>
+                </div>
+            </div>
+
+            <div class="header-actions">
+                <button id="fetch-trigger-btn" class="btn btn-secondary" title="Sync Latest News">
+                    <i class="fa-solid fa-rotate"></i>
+                    <span>Sync News</span>
+                </button>
+                <button id="theme-toggle-btn" class="btn btn-icon" title="Toggle Theme">
+                    <i class="fa-solid fa-sun"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="app-container">
+        <!-- Search & Control Panel -->
+        <section class="controls-section">
+            <div class="search-bar">
+                <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                <input type="text" id="search-input" placeholder="Search headlines, summaries, or sources..."
+                    autocomplete="off">
+                <span class="search-shortcut">⌘K</span>
+            </div>
+        </section>
+
+        <!-- Category Tabs -->
+        <nav class="category-nav">
+            <div class="category-tabs" id="category-tabs">
+                <button class="tab-btn active" data-category="">All News</button>
+                <button class="tab-btn" data-category="AI">🤖 AI</button>
+                <button class="tab-btn" data-category="Technology">💻 Tech</button>
+                <button class="tab-btn" data-category="Business">📈 Business</button>
+                <button class="tab-btn" data-category="Sports">⚽ Sports</button>
+                <button class="tab-btn" data-category="World">🌍 World</button>
+            </div>
+        </nav>
+
+        <!-- Stats/Metadata Bar -->
+        <section class="stats-bar">
+            <div id="articles-count" class="stats-text">Showing latest headlines</div>
+            <div class="stats-divider"></div>
+            <div class="stats-time">Auto-updates periodically</div>
+        </section>
+
+        <!-- News Feed Grid -->
+        <section class="news-feed">
+            <div id="news-grid" class="news-grid">
+                <!-- Skeleton loaders will be inserted here by JS -->
+            </div>
+        </section>
+
+        <!-- Empty & Error States -->
+        <section id="empty-state" class="empty-state hidden">
+            <div class="empty-icon">
+                <i class="fa-regular fa-folder-open"></i>
+            </div>
+            <h2>No news found</h2>
+            <p>We couldn't find any articles matching your search query or category.</p>
+            <button id="clear-search-btn" class="btn btn-primary">Reset Filters</button>
+        </section>
+
+        <section id="error-state" class="error-state hidden">
+            <div class="error-icon">
+                <i class="fa-solid fa-circle-exclamation"></i>
+            </div>
+            <h2>Failed to load news</h2>
+            <p>There was a problem connecting to the API. Please try again later.</p>
+            <button id="retry-btn" class="btn btn-primary">Retry Connection</button>
+        </section>
+    </main>
+
+    <footer class="app-footer">
+        <p>&copy; 2026 TriggNews Bot. Built with AWS Serverless & FastAPI.</p>
+    </footer>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast hidden">
+        <i class="fa-solid fa-circle-info toast-icon"></i>
+        <span id="toast-message">Notification message</span>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
