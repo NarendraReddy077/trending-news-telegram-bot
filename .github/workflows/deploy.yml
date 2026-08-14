@@ -1,2 +1,60 @@
 name: CI/CD Pipeline - Telegram Trending News Bot
 
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-deploy:
+    name: Test and Deploy AWS CDK Stack
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+          pip install -r backend/fetcher/requirements.txt
+          pip install -r backend/api/requirements.txt
+
+      - name: Run Test Suite
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          pytest
+
+      - name: Set up Node.js
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install AWS CDK CLI
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          npm install -g aws-cdk
+
+      - name: Configure AWS Credentials
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Deploy CDK Stack
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          cdk deploy --require-approval never
