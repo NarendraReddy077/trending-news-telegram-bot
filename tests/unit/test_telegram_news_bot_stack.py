@@ -46,7 +46,11 @@ def test_cdk_resources_created():
     template.resource_count_is("AWS::ApiGateway::RestApi", 1)
 
     # 6. Verify CloudFront Distribution
-    template.resource_count_is("AWS::CloudFront::Distribution", 1)
+    import os
+    if os.environ.get("DISABLE_CLOUDFRONT") == "true":
+        template.resource_count_is("AWS::CloudFront::Distribution", 0)
+    else:
+        template.resource_count_is("AWS::CloudFront::Distribution", 1)
 
     # 7. Verify EventBridge Cron Scheduler Rule
     template.resource_count_is("AWS::Events::Rule", 1)

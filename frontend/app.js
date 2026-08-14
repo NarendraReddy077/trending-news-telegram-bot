@@ -1,7 +1,5 @@
 // Configuration
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://127.0.0.1:8000'
-    : '';
+let API_BASE = '';
 
 let currentCategory = '';
 let searchQuery = '';
@@ -26,11 +24,33 @@ const toastMessageEl = document.getElementById('toast-message');
 // APP INITIALIZATION
 // ==========================================================================
 
-document.addEventListener('DOMContentLoaded', () => {
+async function initConfig() {
+    try {
+        const response = await fetch('./config.json');
+        if (response.ok) {
+            const config = await response.json();
+            API_BASE = config.apiBaseUrl || '';
+        } else {
+            throw new Error(`Failed to load config: ${response.status}`);
+        }
+    } catch (error) {
+        console.warn('Could not load config.json, using default API configuration.', error);
+        // Fallback for local development
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            API_BASE = 'http://127.0.0.1:8000';
+        } else {
+            API_BASE = '';
+        }
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
     initTheme();
+    await initConfig();
     loadNews();
     setupEventListeners();
 });
+
 
 function setupEventListeners() {
     // Search input event with debouncing (300ms)

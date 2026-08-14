@@ -114,18 +114,36 @@ class TelegramNewsBotStack(Stack):
             projection_type=dynamodb.ProjectionType.ALL
         )
 
-        # 4. S3 Bucket for Hosting Frontend Web Assets
-        frontend_bucket = s3.Bucket(
-            self, "FrontendBucket",
-            removal_policy=RemovalPolicy.DESTROY,
-            auto_delete_objects=True,
-            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
-            encryption=s3.BucketEncryption.S3_MANAGED,
+        # Check if CloudFront should be disabled
+        disable_cloudfront = (
+            os.environ.get("DISABLE_CLOUDFRONT") == "true" or
+            self.node.try_get_context("disable_cloudfront") == "true"
         )
 
-        # CloudFront Origin Access Identity (OAI) for S3 access
-        oai = cloudfront.OriginAccessIdentity(self, "FrontendOAI")
-        frontend_bucket.grant_read(oai)
+        # 4. S3 Bucket for Hosting Frontend Web Assets
+        if disable_cloudfront:
+            frontend_bucket = s3.Bucket(
+                self, "FrontendBucket",
+                removal_policy=RemovalPolicy.DESTROY,
+                auto_delete_objects=True,
+                website_index_document="index.html",
+                public_read_access=True,
+                block_public_access=s3.BlockPublicAccess(
+                    block_public_acls=False,
+                    block_public_policy=False,
+                    ignore_public_acls=False,
+                    restrict_public_buckets=False
+                ),
+                encryption=s3.BucketEncryption.S3_MANAGED,
+            )
+        else:
+            frontend_bucket = s3.Bucket(
+                self, "FrontendBucket",
+                removal_policy=RemovalPolicy.DESTROY,
+                auto_delete_objects=True,
+                block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+                encryption=s3.BucketEncryption.S3_MANAGED,
+            )
 
         # 5. Fetcher Lambda Function
         fetcher_lambda = _lambda.Function(
@@ -166,45 +184,60 @@ class TelegramNewsBotStack(Stack):
         )
 
         # 8. CloudFront Distribution
-        s3_origin = origins.S3Origin(
-            frontend_bucket,
-            origin_access_identity=oai
-        )
+        if not disable_cloudfront:
+            # CloudFront Origin Access Identity (OAI) for S3 access
+            oai = cloudfront.OriginAccessIdentity(self, "FrontendOAI")
+            frontend_bucket.grant_read(oai)
 
-        api_domain = f"{api_gateway.rest_api_id}.execute-api.{self.region}.amazonaws.com"
-        api_origin = origins.HttpOrigin(
-            api_domain,
-            origin_path="/prod"
-        )
+            s3_origin = origins.S3Origin(
+                frontend_bucket,
+                origin_access_identity=oai
+            )
 
-        distribution = cloudfront.Distribution(
-            self, "NewsDistribution",
-            default_behavior=cloudfront.BehaviorOptions(
-                origin=s3_origin,
-                viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-            ),
-            additional_behaviors={
-                "/api/*": cloudfront.BehaviorOptions(
-                    origin=api_origin,
+            api_domain = f"{api_gateway.rest_api_id}.execute-api.{self.region}.amazonaws.com"
+            api_origin = origins.HttpOrigin(
+                api_domain,
+                origin_path="/prod"
+            )
+
+            distribution = cloudfront.Distribution(
+                self, "NewsDistribution",
+                default_behavior=cloudfront.BehaviorOptions(
+                    origin=s3_origin,
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-                    allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
-                    cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
-                    origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER
-                )
-            },
-            default_root_object="index.html"
-        )
+                ),
+                additional_behaviors={
+                    "/api/*": cloudfront.BehaviorOptions(
+                        origin=api_origin,
+                        viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                        allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
+                        cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                        origin_request_policy=cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER
+                    )
+                },
+                default_root_object="index.html"
+            )
 
-        # Add live dashboard URL to fetcher Lambda's environment
-        fetcher_lambda.add_environment("DASHBOARD_URL", f"https://{distribution.distribution_domain_name}")
+            # Add live dashboard URL to fetcher Lambda's environment
+            fetcher_lambda.add_environment("DASHBOARD_URL", f"https://{distribution.distribution_domain_name}")
+        else:
+            # S3 static website endpoint
+            fetcher_lambda.add_environment("DASHBOARD_URL", frontend_bucket.bucket_website_url)
 
         # 9. S3 Deployment to push static files to S3 bucket
+        api_url = api_gateway.url if disable_cloudfront else ""
+        
         s3_deploy.BucketDeployment(
             self, "DeployFrontend",
-            sources=[s3_deploy.Source.asset("frontend")],
+            sources=[
+                s3_deploy.Source.asset("frontend"),
+                s3_deploy.Source.jsonData("config.json", {
+                    "apiBaseUrl": api_url.rstrip("/")
+                })
+            ],
             destination_bucket=frontend_bucket,
-            distribution=distribution,
-            distribution_paths=["/*"]
+            distribution=None if disable_cloudfront else distribution,
+            distribution_paths=None if disable_cloudfront else ["/*"]
         )
 
         # 10. Permissions and Security
@@ -221,5 +254,9 @@ class TelegramNewsBotStack(Stack):
         rule.add_target(targets.LambdaFunction(fetcher_lambda))
 
         # Outputs
-        cdk.CfnOutput(self, "WebDashboardURL", value=f"https://{distribution.distribution_domain_name}")
+        if disable_cloudfront:
+            cdk.CfnOutput(self, "WebDashboardURL", value=frontend_bucket.bucket_website_url)
+        else:
+            cdk.CfnOutput(self, "WebDashboardURL", value=f"https://{distribution.distribution_domain_name}")
         cdk.CfnOutput(self, "ApiGatewayEndpoint", value=api_gateway.url)
+
