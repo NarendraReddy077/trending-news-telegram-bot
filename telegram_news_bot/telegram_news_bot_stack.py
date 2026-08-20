@@ -21,6 +21,31 @@ from aws_cdk import (
 )
 from constructs import Construct
 
+def safe_rmtree(path: str):
+    """Safely removes a directory tree, retrying and fixing read-only files on Windows."""
+    import stat
+    import time
+
+    def remove_readonly(func, p, excinfo):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except Exception:
+            pass
+
+    if not os.path.exists(path):
+        return
+
+    for i in range(5):
+        try:
+            shutil.rmtree(path, onerror=remove_readonly)
+            return
+        except OSError as e:
+            if i == 4:
+                raise e
+            time.sleep(0.2 * (i + 1))
+
+
 def bundle_lambda(src_dir: str, build_dir: str, req_file: str):
     """Bundles Lambda directory and pip installs dependencies for Linux execution."""
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -28,12 +53,69 @@ def bundle_lambda(src_dir: str, build_dir: str, req_file: str):
     abs_build = os.path.join(project_root, build_dir)
     abs_req = os.path.join(project_root, req_file)
     
-    # Recreate build directory
-    if os.path.exists(abs_build):
-        shutil.rmtree(abs_build)
-    os.makedirs(abs_build)
+    # Determine cache directory for dependencies
+    dir_name = os.path.basename(build_dir)
+    abs_cache = os.path.join(project_root, ".build", "cache", dir_name)
+    cache_req = os.path.join(abs_cache, "requirements.txt")
     
-    # Copy source files
+    # Check if cached dependencies exist and requirements.txt matches
+    run_pip = True
+    if os.path.exists(abs_req):
+        if os.path.exists(abs_cache) and os.path.exists(cache_req):
+            try:
+                with open(abs_req, "r") as f1, open(cache_req, "r") as f2:
+                    if f1.read().strip() == f2.read().strip():
+                        run_pip = False
+            except Exception:
+                run_pip = True
+
+    if run_pip and os.environ.get("SKIP_PIP_BUNDLE") != "true":
+        print(f"Installing dependencies for {src_dir} (cache missing or requirements changed)...")
+        safe_rmtree(abs_cache)
+        os.makedirs(abs_cache)
+        
+        if os.path.exists(abs_req):
+            try:
+                subprocess.run([
+                    sys.executable, "-m", "pip", "install",
+                    "-r", abs_req,
+                    "-t", abs_cache,
+                    "--platform", "manylinux2014_x86_64",
+                    "--only-binary=:all:",
+                    "--implementation", "cp",
+                    "--python-version", "3.11"
+                ], check=True)
+            except Exception as e:
+                print(f"Platform-specific pip install failed, falling back to simple local install: {e}")
+                subprocess.run([
+                    sys.executable, "-m", "pip", "install",
+                    "-r", abs_req,
+                    "-t", abs_cache
+                ], check=True)
+            
+            # Copy requirements.txt to cache directory to track changes
+            shutil.copy2(abs_req, cache_req)
+    else:
+        if os.environ.get("SKIP_PIP_BUNDLE") == "true":
+            print(f"Skipping dependency install for {src_dir} (SKIP_PIP_BUNDLE active).")
+        else:
+            print(f"Using cached dependencies for {src_dir}.")
+
+    # Recreate build directory
+    safe_rmtree(abs_build)
+    os.makedirs(abs_build)
+
+    # Copy dependencies from cache to build directory
+    if os.path.exists(abs_cache):
+        for item in os.listdir(abs_cache):
+            s = os.path.join(abs_cache, item)
+            d = os.path.join(abs_build, item)
+            if os.path.isdir(s):
+                shutil.copytree(s, d)
+            else:
+                shutil.copy2(s, d)
+
+    # Copy Lambda source files
     for item in os.listdir(abs_src):
         s = os.path.join(abs_src, item)
         d = os.path.join(abs_build, item)
@@ -42,33 +124,7 @@ def bundle_lambda(src_dir: str, build_dir: str, req_file: str):
                 shutil.copytree(s, d)
         else:
             shutil.copy2(s, d)
-            
-    # Install dependencies targeting standard AWS Lambda Linux platform
-    if os.environ.get("SKIP_PIP_BUNDLE") == "true":
-        print(f"Skipping dependency install for {src_dir} (SKIP_PIP_BUNDLE active).")
-        return
 
-    if os.path.exists(abs_req):
-        print(f"Bundling dependencies for {src_dir} into {build_dir}...")
-        try:
-            subprocess.run([
-                sys.executable, "-m", "pip", "install",
-                "-r", abs_req,
-                "-t", abs_build,
-                "--platform", "manylinux2014_x86_64",
-                "--only-binary=:all:",
-                "--implementation", "cp",
-                "--python-version", "3.11",
-                "--no-cache-dir"
-            ], check=True)
-        except Exception as e:
-            print(f"Platform-specific pip install failed, falling back to simple local install: {e}")
-            subprocess.run([
-                sys.executable, "-m", "pip", "install",
-                "-r", abs_req,
-                "-t", abs_build,
-                "--no-cache-dir"
-            ], check=True)
 
 
 class TelegramNewsBotStack(Stack):
@@ -185,14 +241,11 @@ class TelegramNewsBotStack(Stack):
 
         # 8. CloudFront Distribution
         if not disable_cloudfront:
-            # CloudFront Origin Access Identity (OAI) for S3 access
-            oai = cloudfront.OriginAccessIdentity(self, "FrontendOAI")
-            frontend_bucket.grant_read(oai)
-
-            s3_origin = origins.S3Origin(
-                frontend_bucket,
-                origin_access_identity=oai
+            # S3BucketOrigin with OAC (Origin Access Control) is the modern standard replacing S3Origin with OAI
+            s3_origin = origins.S3BucketOrigin.with_origin_access_control(
+                frontend_bucket
             )
+
 
             api_domain = f"{api_gateway.rest_api_id}.execute-api.{self.region}.amazonaws.com"
             api_origin = origins.HttpOrigin(
@@ -231,7 +284,7 @@ class TelegramNewsBotStack(Stack):
             self, "DeployFrontend",
             sources=[
                 s3_deploy.Source.asset("frontend"),
-                s3_deploy.Source.jsonData("config.json", {
+                s3_deploy.Source.json_data("config.json", {
                     "apiBaseUrl": api_url.rstrip("/")
                 })
             ],
