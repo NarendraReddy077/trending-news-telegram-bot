@@ -1,7 +1,7 @@
-# Daily Trending News Telegram Bot
+# TriggNews - Daily Trending News Telegram Bot
 
 [![License](https://img.shields.io/github/license/NarendraReddy077/trending-news-telegram-bot)](LICENSE)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/NarendraReddy077/trending-news-telegram-bot/main.yml?branch=main)](https://github.com/NarendraReddy077/trending-news-telegram-bot)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/NarendraReddy077/trending-news-telegram-bot/deploy.yml?branch=main)](https://github.com/NarendraReddy077/trending-news-telegram-bot)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![AWS CDK](https://img.shields.io/badge/AWS_CDK-Python-FF9900?logo=amazonaws&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Mangum-009688?logo=fastapi&logoColor=white)
@@ -155,7 +155,7 @@ Contributions make the open-source community an amazing place to learn, inspire,
 Distributed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ## ✉️ Contact
-**Narendra Reddy**
+**Narendra Reddy Molakala**
 - 📧 Email: [narendra9737406@gmail.com](mailto:narendra9737406@gmail.com)
 - 💼 LinkedIn: [linkedin.com/in/narendra-reddy-molakala-1b220a207](https://www.linkedin.com/in/narendra-reddy-molakala-1b220a207)
 - 🐙 GitHub: [@NarendraReddy077](https://github.com/NarendraReddy077)
