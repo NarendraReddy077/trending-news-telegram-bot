@@ -57,4 +57,4 @@ jobs:
       - name: Deploy CDK Stack
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: |
-          cdk deploy --require-approval never
+          cdk deploy --require-approval never -c disable_cloudfront=true
